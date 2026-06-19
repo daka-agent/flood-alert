@@ -513,12 +513,9 @@
 </div>
 
 <script>
-  // ── 配置 ──────────────────────────────────────────────
-  const GITEE_OWNER  = 'duobaozhang';
-  const GITEE_REPO   = 'flood-alert';
-  const GITEE_TOKEN  = '927b7f230b6f9e68c74ad28c0e55f7b5';
-  const GITEE_API    = 'https://gitee.com/api/v5';
-  const IMGBB_API_KEY = '46a07d7e83220e697386f6233c1da8f4';
+  // ── 配置（零密钥前端）─────────────────────────────────
+  const API_BASE       = 'https://flood-alert-api.zhangdaka.workers.dev';
+  const IMGBB_API_KEY  = '46a07d7e83220e697386f6233c1da8f4';
   const ADMIN_PASSWORD = 'admin888';
   const EXPIRE_HOURS   = 12;
   const REFRESH_MS     = 30000; // 30秒自动刷新
@@ -613,14 +610,13 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
-  // ── 数据层：从 Gitee Issues 读取 ─────────────────────
+  // ── 数据层：通过 Worker 代理读取 Issues ─────────────
   async function loadReports(manualRefresh) {
     if (manualRefresh) {
       document.getElementById('reportList').innerHTML = '<div class="loading">⏳ 正在刷新…</div>';
     }
     try {
-      const url = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues?state=open&per_page=100&access_token=${GITEE_TOKEN}`;
-      const res = await fetch(url);
+      const res = await fetch(`${API_BASE}/issues`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const issues = await res.json();
 
@@ -713,7 +709,7 @@
     }
   }
 
-  // ── 提交上报（创建 Gitee Issue）────────────────────
+  // ── 提交上报（通过 Worker 代理创建 Issue）──────────
   async function submitReport() {
     const btn = document.getElementById('submitBtn');
     btn.disabled = true;
@@ -743,17 +739,11 @@
     const issueTitle = `[积水上报] ${location} - ${SEV_MAP[severity].label}`;
 
     try {
-      const res = await fetch(
-        `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues?access_token=${GITEE_TOKEN}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json;charset=UTF-8' },
-          body: JSON.stringify({
-            title: issueTitle,
-            body: issueBody,
-          }),
-        }
-      );
+      const res = await fetch(`${API_BASE}/issues`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+        body: JSON.stringify({ title: issueTitle, body: issueBody }),
+      });
 
       if (!res.ok) {
         const txt = await res.text();
@@ -784,7 +774,7 @@
     document.getElementById('uploadStatus').style.display = 'none';
   }
 
-  // ── 删除（关闭 Gitee Issue）──────────────────────────
+  // ── 删除（通过 Worker 代理关闭 Issue）──────────────
   let pendingDeleteId = null;
   function askDelete(issueId) {
     if (!issueId) return;
@@ -805,14 +795,12 @@
       return;
     }
     try {
-      await fetch(
-        `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues/${pendingDeleteId}?access_token=${GITEE_TOKEN}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json;charset=UTF-8' },
-          body: JSON.stringify({ state: 'closed' }),
-        }
-      );
+      const res = await fetch(`${API_BASE}/issues/${pendingDeleteId}?pwd=${ADMIN_PASSWORD}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+        body: JSON.stringify({ state: 'closed' }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       showToast('✅ 已删除');
       loadReports(false);
     } catch(e) {
