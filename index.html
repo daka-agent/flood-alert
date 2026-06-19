@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>校园水浸预警</title>
+  <style>
+    * { box-sizing: border-box; margin:0; padding:0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      background: #f0f4f8;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+
+    /* ── 顶部标题栏 ── */
+    .header {
+      background: linear-gradient(135deg, #1a73e8, #0d47a1);
+      color: #fff;
+      padding: 18px 20px 14px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header h1 { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+    .header p  { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+
+    /* ── 当前状态横幅 ── */
+    .status-banner {
+      margin: 14px 16px 0;
+      border-radius: 12px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      transition: background 0.3s;
+    }
+    .status-banner.safe    { background: #e8f5e9; color: #2e7d32; }
+    .status-banner.warning { background: #fff3e0; color: #e65100; }
+    .status-banner.danger  { background: #ffebee; color: #c62828; }
+    .status-icon { font-size: 26px; flex-shrink: 0; }
+
+    /* ── 刷新提示 ── */
+    .refresh-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 16px;
+      font-size: 11px;
+      color: #999;
+    }
+    .refresh-bar button {
+      background: none;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: 11px;
+      color: #666;
+      cursor: pointer;
+    }
+
+    /* ── 区块标题 ── */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #666;
+      letter-spacing: 0.5px;
+      padding: 12px 16px 8px;
+    }
+
+    /* ── 上报记录列表 ── */
+    .report-list { padding: 0 16px; }
+
+    .report-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      position: relative;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+    .report-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .severity-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .sev-light    { background: #fdd835; }
+    .sev-moderate { background: #fb8c00; }
+    .sev-severe   { background: #e53935; }
+    .sev-receded  { background: #43a047; }
+
+    .report-location { font-weight: 700; font-size: 15px; }
+    .report-severity {
+      font-size: 11px;
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-weight: 600;
+      margin-left: auto;
+    }
+    .sev-label-light    { background: #fff9c4; color: #f57f17; }
+    .sev-label-moderate { background: #ffe0b2; color: #e65100; }
+    .sev-label-severe   { background: #ffcdd2; color: #c62828; }
+    .sev-label-receded  { background: #c8e6c9; color: #2e7d32; }
+
+    .report-meta {
+      font-size: 12px;
+      color: #999;
+      margin-bottom: 6px;
+    }
+    .report-desc { font-size: 14px; color: #444; line-height: 1.5; }
+
+    .report-photo {
+      margin-top: 8px;
+      width: 100%;
+      max-height: 180px;
+      object-fit: cover;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .expired-tag {
+      display: inline-block;
+      font-size: 11px;
+      background: #f5f5f5;
+      color: #aaa;
+      border-radius: 4px;
+      padding: 1px 6px;
+      margin-top: 4px;
+    }
+
+    .delete-btn {
+      position: absolute;
+      top: 10px; right: 10px;
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 18px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: color 0.2s;
+    }
+    .delete-btn:hover { color: #e53935; }
+
+    .empty-state {
+      text-align: center;
+      color: #bbb;
+      padding: 40px 0;
+      font-size: 14px;
+    }
+    .empty-state .empty-icon { font-size: 40px; margin-bottom: 8px; }
+
+    .bottom-spacer { height: 80px; }
+
+    /* ── 浮动上报按钮 ── */
+    .fab {
+      position: fixed;
+      bottom: 24px; right: 20px;
+      background: linear-gradient(135deg, #1a73e8, #0d47a1);
+      color: #fff;
+      border: none;
+      border-radius: 28px;
+      padding: 14px 22px;
+      font-size: 15px;
+      font-weight: 700;
+      box-shadow: 0 4px 16px rgba(26,115,232,0.45);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 200;
+      transition: transform 0.15s;
+    }
+    .fab:active { transform: scale(0.96); }
+
+    /* ── 遮罩 ── */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 300;
+      justify-content: flex-end;
+      flex-direction: column;
+    }
+    .overlay.open { display: flex; }
+
+    /* ── 底部抽屉 ── */
+    .drawer {
+      background: #fff;
+      border-radius: 20px 20px 0 0;
+      padding: 20px 20px 32px;
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: slideUp 0.25s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: none; } }
+
+    .drawer-handle {
+      width: 36px; height: 4px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      margin: 0 auto 18px;
+    }
+    .drawer h2 { font-size: 17px; font-weight: 700; margin-bottom: 18px; }
+
+    /* ── 表单元素 ── */
+    .form-group { margin-bottom: 14px; }
+    .form-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; display: block; }
+
+    .form-select, .form-input, .form-textarea {
+      width: 100%;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #fafafa;
+      outline: none;
+      transition: border-color 0.2s;
+      color: #1a1a2e;
+    }
+    .form-select:focus, .form-input:focus, .form-textarea:focus {
+      border-color: #1a73e8;
+      background: #fff;
+    }
+    .form-textarea { resize: none; height: 80px; }
+
+    .sev-options { display: flex; gap: 8px; flex-wrap: wrap; }
+    .sev-option input[type="radio"] { display: none; }
+    .sev-option label {
+      display: inline-block;
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 2px solid #e0e0e0;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .sev-option input[type="radio"]:checked + label { border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; }
+
+    /* 照片上传 */
+    .photo-upload-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 14px;
+      border: 1.5px dashed #bbb;
+      border-radius: 10px;
+      font-size: 14px;
+      color: #888;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      background: #fafafa;
+    }
+    .photo-upload-label:hover { border-color: #1a73e8; color: #1a73e8; }
+    #photoInput { display: none; }
+    .photo-preview-wrap { margin-top: 8px; display: none; }
+    .photo-preview-wrap img { width: 100%; max-height: 140px; object-fit: cover; border-radius: 8px; }
+
+    .upload-status { font-size: 12px; color: #888; margin-top: 4px; display: none; }
+
+    /* 提交按钮 */
+    .submit-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #1a73e8, #0d47a1);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: opacity 0.2s;
+    }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* 成功/提示 */
+    .toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: #2e7d32;
+      color: #fff;
+      padding: 10px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      z-index: 999;
+      opacity: 0;
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.warn { background: #f57f17; }
+
+    /* ── 图片全屏预览 ── */
+    .img-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 999;
+      justify-content: center;
+      align-items: center;
+    }
+    .img-modal.open { display: flex; }
+    .img-modal img { max-width: 95%; max-height: 90vh; border-radius: 8px; }
+    .img-modal-close {
+      position: absolute;
+      top: 16px; right: 16px;
+      color: #fff;
+      font-size: 28px;
+      cursor: pointer;
+      line-height: 1;
+      background: rgba(0,0,0,0.4);
+      border-radius: 50%;
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── 管理员密码弹窗 ── */
+    .pwd-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 400;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .pwd-modal.open { display: flex; }
+    .pwd-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .pwd-box h3 { font-size: 16px; margin-bottom: 14px; }
+    .pwd-box input {
+      width: 100%;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 15px;
+      outline: none;
+      margin-bottom: 14px;
+    }
+    .pwd-box input:focus { border-color: #1a73e8; }
+    .pwd-actions { display: flex; gap: 10px; }
+    .pwd-cancel, .pwd-confirm {
+      flex: 1;
+      padding: 11px;
+      border-radius: 10px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .pwd-cancel  { background: #f5f5f5; color: #555; }
+    .pwd-confirm { background: #1a73e8; color: #fff; }
+    .pwd-error { font-size: 12px; color: #e53935; margin-top: -8px; margin-bottom: 10px; display: none; }
+
+    /* ── 加载动画 ── */
+    .loading { text-align: center; padding: 20px; color: #999; font-size: 13px; }
+
+    /* ── 网络提示 ── */
+    .network-hint {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin: 8px 16px;
+      font-size: 12px;
+      color: #f57f17;
+      display: none;
+    }
+    .network-hint.show { display: block; }
+
+    /* ── 提交确认弹窗 ── */
+    .confirm-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 400;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .confirm-modal.open { display: flex; }
+    .confirm-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 340px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+    .confirm-box h3 { font-size: 16px; margin-bottom: 12px; }
+    .confirm-box p { font-size: 13px; color: #666; margin-bottom: 18px; line-height: 1.6; }
+    .confirm-btns { display: flex; gap: 10px; }
+    .confirm-btns button {
+      flex: 1;
+      padding: 11px;
+      border-radius: 10px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-cancel { background: #f5f5f5; color: #555; }
+    .btn-go { background: #2e7d32; color: #fff; }
+  </style>
+</head>
+<body>
+
+<!-- 顶部标题 -->
+<div class="header">
+  <h1>🌊 校园水浸预警</h1>
+  <p>实时路况 · 众包上报 · 安全出行</p>
+</div>
+
+<!-- 当前状态横幅 -->
+<div class="status-banner safe" id="statusBanner">
+  <span class="status-icon" id="statusIcon">✅</span>
+  <div>
+    <div id="statusText">加载中…</div>
+    <div style="font-size:12px;font-weight:400;opacity:0.8;margin-top:2px;" id="statusSub">正在获取最新路况信息</div>
+  </div>
+</div>
+
+<!-- 网络提示 -->
+<div class="network-hint" id="networkHint">
+  ⏳ 首次连接可能需要几秒钟，请耐心等待…
+</div>
+
+<!-- 刷新栏 -->
+<div class="refresh-bar">
+  <span id="lastUpdate">正在加载…</span>
+  <button onclick="loadReports(true)">🔄 刷新</button>
+</div>
+
+<!-- 上报记录 -->
+<div class="section-title">最新上报</div>
+<div class="report-list" id="reportList">
+  <div class="loading">⏳ 正在加载上报记录…</div>
+</div>
+<div class="bottom-spacer"></div>
+
+<!-- 浮动按钮 -->
+<button class="fab" onclick="openDrawer()">
+  <span>📍</span> 我要上报
+</button>
+
+<!-- 成功提示 -->
+<div class="toast" id="toast"></div>
+
+<!-- 上报抽屉 -->
+<div class="overlay" id="overlay" onclick="closeDrawerOnBg(event)">
+  <div class="drawer" id="drawer">
+    <div class="drawer-handle"></div>
+    <h2>📝 上报积水情况</h2>
+
+    <div class="form-group">
+      <label class="form-label">📍 地点</label>
+      <select class="form-select" id="locSelect" onchange="toggleCustomLoc()">
+        <option value="西门外马路">西门外马路</option>
+        <option value="东门外马路">东门外马路</option>
+        <option value="校内主干道">校内主干道</option>
+        <option value="other">其他（手动输入）</option>
+      </select>
+      <input class="form-input" id="customLoc" placeholder="请输入具体位置"
+             style="display:none;margin-top:8px;" />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">🌊 积水程度</label>
+      <div class="sev-options">
+        <div class="sev-option">
+          <input type="radio" name="severity" id="sev1" value="light" checked />
+          <label for="sev1">轻微</label>
+        </div>
+        <div class="sev-option">
+          <input type="radio" name="severity" id="sev2" value="moderate" />
+          <label for="sev2">中度</label>
+        </div>
+        <div class="sev-option">
+          <input type="radio" name="severity" id="sev3" value="severe" />
+          <label for="sev3">严重</label>
+        </div>
+        <div class="sev-option">
+          <input type="radio" name="severity" id="sev4" value="receded" />
+          <label for="sev4">已退水</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">📷 现场照片（可选）</label>
+      <label class="photo-upload-label" for="photoInput">
+        <span>📁</span> 点击上传照片
+      </label>
+      <input type="file" id="photoInput" accept="image/*" onchange="onPhotoSelected()" />
+      <div class="photo-preview-wrap" id="photoPreviewWrap">
+        <img id="photoPreviewImg" src="" alt="预览" />
+      </div>
+      <div class="upload-status" id="uploadStatus">⏳ 正在上传照片…</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">💬 补充说明（可选）</label>
+      <textarea class="form-textarea" id="descInput" placeholder="例如：积水约到脚踝，车辆无法通行…"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">👤 上报人昵称（可留空）</label>
+      <input class="form-input" id="nicknameInput" placeholder="留空则显示为"匿名"" />
+    </div>
+
+    <button class="submit-btn" id="submitBtn" onclick="prepareSubmit()">📤 提交上报</button>
+  </div>
+</div>
+
+<!-- 提交确认弹窗 -->
+<div class="confirm-modal" id="confirmModal">
+  <div class="confirm-box">
+    <h3>📤 确认上报</h3>
+    <p id="confirmText">即将跳转到 GitHub 发布你的上报信息。<br>首次使用需要登录 GitHub 账号。</p>
+    <div class="confirm-btns">
+      <button class="btn-cancel" onclick="closeConfirmModal()">取消</button>
+      <button class="btn-go" id="btnGoSubmit" onclick="doSubmit()">前往发布</button>
+    </div>
+  </div>
+</div>
+
+<!-- 图片全屏预览 -->
+<div class="img-modal" id="imgModal" onclick="closeImgModal()">
+  <span class="img-modal-close">✕</span>
+  <img id="imgModalSrc" src="" alt="" />
+</div>
+
+<!-- 管理员密码弹窗 -->
+<div class="pwd-modal" id="pwdModal">
+  <div class="pwd-box">
+    <h3>🔐 管理员验证</h3>
+    <input type="password" id="pwdInput" placeholder="请输入管理员密码"
+           onkeydown="if(event.key==='Enter')confirmDelete()" />
+    <div class="pwd-error" id="pwdError">密码错误，请重试</div>
+    <div class="pwd-actions">
+      <button class="pwd-cancel" onclick="closePwdModal()">取消</button>
+      <button class="pwd-confirm" onclick="confirmDelete()">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── 配置 ──────────────────────────────────────────────
+  const GH_OWNER   = 'daka-agent';
+  const GH_REPO    = 'flood-alert';
+  // GitHub Issues 公开 API — 无需任何密钥即可读取
+  const GH_API     = 'https://api.github.com';
+  const GH_ISSUES_URL = 'https://github.com/' + GH_OWNER + '/' + GH_REPO + '/issues/new';
+  const IMGBB_API_KEY = '46a07d7e83220e697386f6233c1da8f4';
+  const ADMIN_PASSWORD = 'admin888';
+  const EXPIRE_HOURS  = 12;
+  const REFRESH_MS    = 60000; // 60秒自动刷新
+
+  let firstLoadDone = false;
+  let pendingIssueUrl = null;
+
+  // ── GitHub API 请求封装 ───────────────────────────────
+  function ghHeaders() {
+    return { 'Accept': 'application/vnd.github+json' };
+  }
+
+  // ── 状态判断 ──────────────────────────────────────────
+  function calcStatus(reports) {
+    const active = reports.filter(r => !isExpired(r) && r.severity !== 'receded');
+    if (!active.length) return 'safe';
+    if (active.some(r => r.severity === 'severe'))   return 'danger';
+    if (active.some(r => r.severity === 'moderate')) return 'warning';
+    return 'warning';
+  }
+
+  function isExpired(r) {
+    return (Date.now() - r.ts) > EXPIRE_HOURS * 3600 * 1000;
+  }
+
+  // ── 渲染 ──────────────────────────────────────────────
+  const SEV_MAP = {
+    light:    { label:'轻微', dot:'sev-light',    badge:'sev-label-light'    },
+    moderate: { label:'中度', dot:'sev-moderate', badge:'sev-label-moderate' },
+    severe:   { label:'严重', dot:'sev-severe',   badge:'sev-label-severe'   },
+    receded:  { label:'已退水', dot:'sev-receded', badge:'sev-label-receded' },
+  };
+
+  function renderAll(reports) {
+    renderStatus(reports);
+    renderList(reports);
+    document.getElementById('lastUpdate').textContent =
+      '最后更新：' + new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+  }
+
+  function renderStatus(reports) {
+    const banner = document.getElementById('statusBanner');
+    const icon   = document.getElementById('statusIcon');
+    const text   = document.getElementById('statusText');
+    const sub    = document.getElementById('statusSub');
+    const status = calcStatus(reports);
+
+    banner.className = 'status-banner ' + status;
+    if (status === 'safe') {
+      icon.textContent = '✅';
+      text.textContent = '当前无预警';
+      sub.textContent  = '各校门道路畅通，请放心出行';
+    } else if (status === 'warning') {
+      icon.textContent = '⚠️';
+      text.textContent = '注意：部分路段有积水';
+      sub.textContent  = '请查看下方记录，谨慎出行';
+    } else {
+      icon.textContent = '🚨';
+      text.textContent = '严重预警：道路积水严重';
+      sub.textContent  = '请绕行或暂缓出发，注意安全';
+    }
+  }
+
+  function renderList(reports) {
+    const el = document.getElementById('reportList');
+    if (!reports.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-icon">☀️</div><div>暂无上报记录<br>一切正常，放心出行</div></div>`;
+      return;
+    }
+
+    const sorted = [...reports].sort((a,b) => b.ts - a.ts);
+    el.innerHTML = sorted.map(r => {
+      const sev  = SEV_MAP[r.severity] || SEV_MAP.light;
+      const time = new Date(r.ts).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+      const date = new Date(r.ts).toLocaleDateString('zh-CN', {month:'numeric', day:'numeric'});
+      const exp  = isExpired(r) ? `<span class="expired-tag">⏰ 信息可能已过期</span>` : '';
+      const photo = r.photoUrl
+        ? `<img class="report-photo" src="${escHtml(r.photoUrl)}" alt="现场照片" onclick="openImgModal('${escHtml(r.photoUrl)}')" />`
+        : '';
+      const desc = r.desc ? `<div class="report-desc">${escHtml(r.desc)}</div>` : '';
+      return `
+        <div class="report-card" data-number="${r.number}">
+          <button class="delete-btn" onclick="askDelete(${r.number})" title="删除">×</button>
+          <div class="report-header">
+            <span class="severity-dot ${sev.dot}"></span>
+            <span class="report-location">${escHtml(r.location)}</span>
+            <span class="report-severity ${sev.badge}">${sev.label}</span>
+          </div>
+          <div class="report-meta">${date} ${time} · ${escHtml(r.nickname || '匿名')}</div>
+          ${desc}
+          ${photo}
+          ${exp}
+        </div>`;
+    }).join('');
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // ── 数据层：从 GitHub Issues 读取 ─────────────────────
+  async function loadReports(manualRefresh) {
+    if (manualRefresh) {
+      document.getElementById('reportList').innerHTML = '<div class="loading">⏳ 正在刷新…</div>';
+    }
+    try {
+      const res = await fetch(
+        `${GH_API}/repos/${GH_OWNER}/${GH_REPO}/issues?state=open&per_page=100`,
+        { headers: ghHeaders() }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const issues = await res.json();
+
+      // 只解析带有 flood-report 标签或标题以 [积水上报] 开头的 issues
+      const reports = issues
+        .filter(issue =>
+          (issue.labels || []).some(l => l.name === 'flood-report') ||
+          (issue.title && issue.title.includes('[积水上报]'))
+        )
+        .map(issue => {
+          try {
+            const body = JSON.parse(issue.body || '{}');
+            return {
+              id: issue.id,
+              number: issue.number,
+              ts: body.ts || new Date(issue.created_at).getTime(),
+              location: body.location || issue.title.replace(/\[积水上报\]\s*/, '').split(' - ')[0],
+              severity: body.severity || 'light',
+              desc: body.desc || '',
+              nickname: body.nickname || '',
+              photoUrl: body.photoUrl || null,
+            };
+          } catch(e) {
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      renderAll(reports);
+
+      if (!firstLoadDone) {
+        firstLoadDone = true;
+        setTimeout(() => document.getElementById('networkHint').classList.remove('show'), 2000);
+      }
+    } catch(e) {
+      document.getElementById('reportList').innerHTML =
+        `<div class="empty-state"><div class="empty-icon">⚠️</div><div>加载失败，请稍后重试<br><small>${escHtml(e.message)}</small></div></div>`;
+      document.getElementById('lastUpdate').textContent = '加载失败';
+
+      if (!firstLoadDone) {
+        document.getElementById('networkHint').textContent = '⚠️ 无法连接到服务器，请检查网络后点击「刷新」重试';
+        document.getElementById('networkHint').classList.add('show');
+      }
+    }
+  }
+
+  // ── 抽屉开关 ──────────────────────────────────────────
+  function openDrawer() {
+    document.getElementById('overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeDrawer() {
+    document.getElementById('overlay').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  function closeDrawerOnBg(e) {
+    if (e.target === document.getElementById('overlay')) closeDrawer();
+  }
+
+  // ── 自定义地点切换 ────────────────────────────────────
+  function toggleCustomLoc() {
+    const sel = document.getElementById('locSelect').value;
+    document.getElementById('customLoc').style.display = sel === 'other' ? 'block' : 'none';
+  }
+
+  // ── 照片选择预览 & 上传 ───────────────────────────────
+  function onPhotoSelected() {
+    const file = document.getElementById('photoInput').files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('photoPreviewImg').src = e.target.result;
+      document.getElementById('photoPreviewWrap').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function uploadPhoto(file) {
+    const statusEl = document.getElementById('uploadStatus');
+    statusEl.style.display = 'block';
+    statusEl.textContent = '⏳ 正在上传照片…';
+
+    const form = new FormData();
+    form.append('image', file);
+
+    try {
+      const res  = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method:'POST', body: form });
+      const json = await res.json();
+      if (json.success) {
+        statusEl.textContent = '✅ 照片上传成功';
+        return json.data.url;
+      } else {
+        statusEl.textContent = '❌ 上传失败，将跳过照片';
+        return null;
+      }
+    } catch(e) {
+      statusEl.textContent = '❌ 网络错误，将跳过照片';
+      return null;
+    }
+  }
+
+  // ── 准备提交（收集数据 → 弹出确认）───────────────────
+  async function prepareSubmit() {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = '准备中…';
+
+    const locSel = document.getElementById('locSelect').value;
+    const location = locSel === 'other'
+      ? (document.getElementById('customLoc').value.trim() || '其他位置')
+      : locSel;
+    const severity = document.querySelector('input[name="severity"]:checked').value;
+    const desc     = document.getElementById('descInput').value.trim();
+    const nickname = document.getElementById('nicknameInput').value.trim() || '匿名';
+    const photoFile = document.getElementById('photoInput').files[0];
+
+    // 先上传照片（如果有）
+    let photoUrl = '';
+    if (photoFile) {
+      photoUrl = await uploadPhoto(photoFile) || '';
+    }
+
+    // 构造 Issue body（JSON 格式）
+    const issueBodyObj = {
+      ts: Date.now(),
+      location,
+      severity,
+      desc,
+      nickname,
+      photoUrl: photoUrl || null,
+    };
+    const issueBody = JSON.stringify(issueBodyObj, null, 2);
+
+    // 构造 Issue 标题
+    const issueTitle = `[积水上报] ${location} - ${SEV_MAP[severity].label}`;
+
+    // 构造 GitHub New Issue URL
+    const params = new URLSearchParams({
+      title: issueTitle,
+      body: issueBody + '\n\n<!-- flood-report:' + severity + ' -->',
+      labels: ['flood-report', severity],
+    });
+    pendingIssueUrl = GH_ISSUES_URL + '?' + params.toString();
+
+    // 显示确认弹窗
+    closeDrawer();
+    document.getElementById('confirmModal').classList.add('open');
+
+    btn.disabled = false;
+    btn.textContent = '📤 提交上报';
+  }
+
+  function closeConfirmModal() {
+    document.getElementById('confirmModal').classList.remove('open');
+    pendingIssueUrl = null;
+  }
+
+  // ── 执行跳转提交 ──────────────────────────────────────
+  function doSubmit() {
+    if (pendingIssueUrl) {
+      window.open(pendingIssueUrl, '_blank');
+      showToast('💡 已打开 GitHub，请在页面上点击「Submit new issue」完成发布', 'warn');
+      closeConfirmModal();
+      resetForm();
+      // 5 秒后自动刷新列表
+      setTimeout(() => loadReports(false), 5000);
+    }
+  }
+
+  function resetForm() {
+    document.getElementById('locSelect').value = '西门外马路';
+    document.getElementById('customLoc').style.display = 'none';
+    document.getElementById('customLoc').value = '';
+    document.querySelector('input[name="severity"][value="light"]').checked = true;
+    document.getElementById('descInput').value = '';
+    document.getElementById('nicknameInput').value = '';
+    document.getElementById('photoInput').value = '';
+    document.getElementById('photoPreviewWrap').style.display = 'none';
+    document.getElementById('uploadStatus').style.display = 'none';
+  }
+
+  // ── 删除（通过 GitHub API 关闭 Issue）──────────────────
+  // 删除功能需要 Token，仅限管理员操作
+  let pendingDeleteNum = null;
+  function askDelete(number) {
+    if (!number) return;
+    pendingDeleteNum = number;
+    document.getElementById('pwdInput').value = '';
+    document.getElementById('pwdError').style.display = 'none';
+    document.getElementById('pwdModal').classList.add('open');
+    setTimeout(() => document.getElementById('pwdInput').focus(), 100);
+  }
+  function closePwdModal() {
+    document.getElementById('pwdModal').classList.remove('open');
+    pendingDeleteNum = null;
+  }
+  async function confirmDelete() {
+    const pwd = document.getElementById('pwdInput').value;
+    if (pwd !== ADMIN_PASSWORD) {
+      document.getElementById('pwdError').style.display = 'block';
+      return;
+    }
+    // 密码正确后，跳转到 GitHub 让管理员手动关闭 Issue
+    // 这样不需要在前端存储任何 Token！
+    const url = `https://github.com/${GH_OWNER}/${GH_REPO}/issues/${pendingDeleteNum}`;
+    window.open(url, '_blank');
+    showToast('💡 已打开 Issue 页面，请在右下角选择「Close issue」关闭它', 'warn');
+    closePwdModal();
+    // 3秒后刷新
+    setTimeout(() => loadReports(false), 3000);
+  }
+
+  // ── 图片全屏 ──────────────────────────────────────────
+  function openImgModal(url) {
+    document.getElementById('imgModalSrc').src = url;
+    document.getElementById('imgModal').classList.add('open');
+  }
+  function closeImgModal() {
+    document.getElementById('imgModal').classList.remove('open');
+  }
+
+  // ── Toast 提示 ────────────────────────────────────────
+  function showToast(msg, type) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.background = type === 'error' ? '#c62828' : (type === 'warn' ? '#f57f17' : '#2e7d32');
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 5000);
+  }
+
+  // ── 初始化 ────────────────────────────────────────────
+  document.getElementById('networkHint').classList.add('show');
+  loadReports(false);
+  setInterval(() => loadReports(false), REFRESH_MS);
+</script>
+</body>
+</html>
