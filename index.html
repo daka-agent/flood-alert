@@ -386,55 +386,6 @@
 
     /* ── 加载动画 ── */
     .loading { text-align: center; padding: 20px; color: #999; font-size: 13px; }
-
-    /* ── 网络提示 ── */
-    .network-hint {
-      background: #fff8e1;
-      border: 1px solid #ffe082;
-      border-radius: 8px;
-      padding: 10px 14px;
-      margin: 8px 16px;
-      font-size: 12px;
-      color: #f57f17;
-      display: none;
-    }
-    .network-hint.show { display: block; }
-
-    /* ── 提交确认弹窗 ── */
-    .confirm-modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 400;
-      justify-content: center;
-      align-items: center;
-      padding: 20px;
-    }
-    .confirm-modal.open { display: flex; }
-    .confirm-box {
-      background: #fff;
-      border-radius: 16px;
-      padding: 24px;
-      width: 100%;
-      max-width: 340px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-      text-align: center;
-    }
-    .confirm-box h3 { font-size: 16px; margin-bottom: 12px; }
-    .confirm-box p { font-size: 13px; color: #666; margin-bottom: 18px; line-height: 1.6; }
-    .confirm-btns { display: flex; gap: 10px; }
-    .confirm-btns button {
-      flex: 1;
-      padding: 11px;
-      border-radius: 10px;
-      border: none;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .btn-cancel { background: #f5f5f5; color: #555; }
-    .btn-go { background: #2e7d32; color: #fff; }
   </style>
 </head>
 <body>
@@ -452,11 +403,6 @@
     <div id="statusText">加载中…</div>
     <div style="font-size:12px;font-weight:400;opacity:0.8;margin-top:2px;" id="statusSub">正在获取最新路况信息</div>
   </div>
-</div>
-
-<!-- 网络提示 -->
-<div class="network-hint" id="networkHint">
-  ⏳ 首次连接可能需要几秒钟，请耐心等待…
 </div>
 
 <!-- 刷新栏 -->
@@ -542,19 +488,7 @@
       <input class="form-input" id="nicknameInput" placeholder="留空则显示为"匿名"" />
     </div>
 
-    <button class="submit-btn" id="submitBtn" onclick="prepareSubmit()">📤 提交上报</button>
-  </div>
-</div>
-
-<!-- 提交确认弹窗 -->
-<div class="confirm-modal" id="confirmModal">
-  <div class="confirm-box">
-    <h3>📤 确认上报</h3>
-    <p id="confirmText">即将跳转到 GitHub 发布你的上报信息。<br>首次使用需要登录 GitHub 账号。</p>
-    <div class="confirm-btns">
-      <button class="btn-cancel" onclick="closeConfirmModal()">取消</button>
-      <button class="btn-go" id="btnGoSubmit" onclick="doSubmit()">前往发布</button>
-    </div>
+    <button class="submit-btn" id="submitBtn" onclick="submitReport()">📤 提交上报</button>
   </div>
 </div>
 
@@ -580,23 +514,16 @@
 
 <script>
   // ── 配置 ──────────────────────────────────────────────
-  const GH_OWNER   = 'daka-agent';
-  const GH_REPO    = 'flood-alert';
-  // GitHub Issues 公开 API — 无需任何密钥即可读取
-  const GH_API     = 'https://api.github.com';
-  const GH_ISSUES_URL = 'https://github.com/' + GH_OWNER + '/' + GH_REPO + '/issues/new';
+  const GITEE_OWNER  = 'duobaozhang';
+  const GITEE_REPO   = 'flood-alert';
+  const GITEE_TOKEN  = '927b7f230b6f9e68c74ad28c0e55f7b5';
+  const GITEE_API    = 'https://gitee.com/api/v5';
   const IMGBB_API_KEY = '46a07d7e83220e697386f6233c1da8f4';
   const ADMIN_PASSWORD = 'admin888';
-  const EXPIRE_HOURS  = 12;
-  const REFRESH_MS    = 60000; // 60秒自动刷新
+  const EXPIRE_HOURS   = 12;
+  const REFRESH_MS     = 30000; // 30秒自动刷新
 
   let firstLoadDone = false;
-  let pendingIssueUrl = null;
-
-  // ── GitHub API 请求封装 ───────────────────────────────
-  function ghHeaders() {
-    return { 'Accept': 'application/vnd.github+json' };
-  }
 
   // ── 状态判断 ──────────────────────────────────────────
   function calcStatus(reports) {
@@ -667,8 +594,8 @@
         : '';
       const desc = r.desc ? `<div class="report-desc">${escHtml(r.desc)}</div>` : '';
       return `
-        <div class="report-card" data-number="${r.number}">
-          <button class="delete-btn" onclick="askDelete(${r.number})" title="删除">×</button>
+        <div class="report-card" data-issue-id="${r.issueId}">
+          <button class="delete-btn" onclick="askDelete(${r.issueId})" title="删除">×</button>
           <div class="report-header">
             <span class="severity-dot ${sev.dot}"></span>
             <span class="report-location">${escHtml(r.location)}</span>
@@ -686,33 +613,28 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
-  // ── 数据层：从 GitHub Issues 读取 ─────────────────────
+  // ── 数据层：从 Gitee Issues 读取 ─────────────────────
   async function loadReports(manualRefresh) {
     if (manualRefresh) {
       document.getElementById('reportList').innerHTML = '<div class="loading">⏳ 正在刷新…</div>';
     }
     try {
-      const res = await fetch(
-        `${GH_API}/repos/${GH_OWNER}/${GH_REPO}/issues?state=open&per_page=100`,
-        { headers: ghHeaders() }
-      );
+      const url = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues?state=open&per_page=100&access_token=${GITEE_TOKEN}`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const issues = await res.json();
 
-      // 只解析带有 flood-report 标签或标题以 [积水上报] 开头的 issues
+      // 解析 issues 为上报记录
       const reports = issues
-        .filter(issue =>
-          (issue.labels || []).some(l => l.name === 'flood-report') ||
-          (issue.title && issue.title.includes('[积水上报]'))
-        )
+        .filter(issue => issue.title && issue.title.startsWith('[积水上报]'))
         .map(issue => {
           try {
             const body = JSON.parse(issue.body || '{}');
             return {
-              id: issue.id,
-              number: issue.number,
+              issueId: issue.id,
+              iid: issue.iid || issue.number,
               ts: body.ts || new Date(issue.created_at).getTime(),
-              location: body.location || issue.title.replace(/\[积水上报\]\s*/, '').split(' - ')[0],
+              location: body.location || issue.title.replace('[积水上报] ', ''),
               severity: body.severity || 'light',
               desc: body.desc || '',
               nickname: body.nickname || '',
@@ -728,17 +650,11 @@
 
       if (!firstLoadDone) {
         firstLoadDone = true;
-        setTimeout(() => document.getElementById('networkHint').classList.remove('show'), 2000);
       }
     } catch(e) {
       document.getElementById('reportList').innerHTML =
         `<div class="empty-state"><div class="empty-icon">⚠️</div><div>加载失败，请稍后重试<br><small>${escHtml(e.message)}</small></div></div>`;
       document.getElementById('lastUpdate').textContent = '加载失败';
-
-      if (!firstLoadDone) {
-        document.getElementById('networkHint').textContent = '⚠️ 无法连接到服务器，请检查网络后点击「刷新」重试';
-        document.getElementById('networkHint').classList.add('show');
-      }
     }
   }
 
@@ -797,11 +713,11 @@
     }
   }
 
-  // ── 准备提交（收集数据 → 弹出确认）───────────────────
-  async function prepareSubmit() {
+  // ── 提交上报（创建 Gitee Issue）────────────────────
+  async function submitReport() {
     const btn = document.getElementById('submitBtn');
     btn.disabled = true;
-    btn.textContent = '准备中…';
+    btn.textContent = '提交中…';
 
     const locSel = document.getElementById('locSelect').value;
     const location = locSel === 'other'
@@ -809,60 +725,51 @@
       : locSel;
     const severity = document.querySelector('input[name="severity"]:checked').value;
     const desc     = document.getElementById('descInput').value.trim();
-    const nickname = document.getElementById('nicknameInput').value.trim() || '匿名';
+    const nickname = document.getElementById('nicknameInput').value.trim();
     const photoFile = document.getElementById('photoInput').files[0];
 
-    // 先上传照片（如果有）
-    let photoUrl = '';
-    if (photoFile) {
-      photoUrl = await uploadPhoto(photoFile) || '';
-    }
+    let photoUrl = null;
+    if (photoFile) photoUrl = await uploadPhoto(photoFile);
 
-    // 构造 Issue body（JSON 格式）
-    const issueBodyObj = {
+    const issueBody = JSON.stringify({
       ts: Date.now(),
       location,
       severity,
       desc,
       nickname,
-      photoUrl: photoUrl || null,
-    };
-    const issueBody = JSON.stringify(issueBodyObj, null, 2);
+      photoUrl,
+    });
 
-    // 构造 Issue 标题
     const issueTitle = `[积水上报] ${location} - ${SEV_MAP[severity].label}`;
 
-    // 构造 GitHub New Issue URL
-    const params = new URLSearchParams({
-      title: issueTitle,
-      body: issueBody + '\n\n<!-- flood-report:' + severity + ' -->',
-      labels: ['flood-report', severity],
-    });
-    pendingIssueUrl = GH_ISSUES_URL + '?' + params.toString();
+    try {
+      const res = await fetch(
+        `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues?access_token=${GITEE_TOKEN}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+          body: JSON.stringify({
+            title: issueTitle,
+            body: issueBody,
+          }),
+        }
+      );
 
-    // 显示确认弹窗
-    closeDrawer();
-    document.getElementById('confirmModal').classList.add('open');
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`HTTP ${res.status} ${txt.slice(0,200)}`);
+      }
+
+      closeDrawer();
+      resetForm();
+      showToast('✅ 上报成功，感谢你的贡献！');
+      loadReports(false);
+    } catch(e) {
+      showToast('❌ 提交失败：' + e.message, 'error');
+    }
 
     btn.disabled = false;
     btn.textContent = '📤 提交上报';
-  }
-
-  function closeConfirmModal() {
-    document.getElementById('confirmModal').classList.remove('open');
-    pendingIssueUrl = null;
-  }
-
-  // ── 执行跳转提交 ──────────────────────────────────────
-  function doSubmit() {
-    if (pendingIssueUrl) {
-      window.open(pendingIssueUrl, '_blank');
-      showToast('💡 已打开 GitHub，请在页面上点击「Submit new issue」完成发布', 'warn');
-      closeConfirmModal();
-      resetForm();
-      // 5 秒后自动刷新列表
-      setTimeout(() => loadReports(false), 5000);
-    }
   }
 
   function resetForm() {
@@ -877,12 +784,11 @@
     document.getElementById('uploadStatus').style.display = 'none';
   }
 
-  // ── 删除（通过 GitHub API 关闭 Issue）──────────────────
-  // 删除功能需要 Token，仅限管理员操作
-  let pendingDeleteNum = null;
-  function askDelete(number) {
-    if (!number) return;
-    pendingDeleteNum = number;
+  // ── 删除（关闭 Gitee Issue）──────────────────────────
+  let pendingDeleteId = null;
+  function askDelete(issueId) {
+    if (!issueId) return;
+    pendingDeleteId = issueId;
     document.getElementById('pwdInput').value = '';
     document.getElementById('pwdError').style.display = 'none';
     document.getElementById('pwdModal').classList.add('open');
@@ -890,7 +796,7 @@
   }
   function closePwdModal() {
     document.getElementById('pwdModal').classList.remove('open');
-    pendingDeleteNum = null;
+    pendingDeleteId = null;
   }
   async function confirmDelete() {
     const pwd = document.getElementById('pwdInput').value;
@@ -898,14 +804,21 @@
       document.getElementById('pwdError').style.display = 'block';
       return;
     }
-    // 密码正确后，跳转到 GitHub 让管理员手动关闭 Issue
-    // 这样不需要在前端存储任何 Token！
-    const url = `https://github.com/${GH_OWNER}/${GH_REPO}/issues/${pendingDeleteNum}`;
-    window.open(url, '_blank');
-    showToast('💡 已打开 Issue 页面，请在右下角选择「Close issue」关闭它', 'warn');
+    try {
+      await fetch(
+        `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues/${pendingDeleteId}?access_token=${GITEE_TOKEN}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+          body: JSON.stringify({ state: 'closed' }),
+        }
+      );
+      showToast('✅ 已删除');
+      loadReports(false);
+    } catch(e) {
+      showToast('❌ 删除失败：' + e.message, 'error');
+    }
     closePwdModal();
-    // 3秒后刷新
-    setTimeout(() => loadReports(false), 3000);
   }
 
   // ── 图片全屏 ──────────────────────────────────────────
@@ -923,11 +836,10 @@
     el.textContent = msg;
     el.style.background = type === 'error' ? '#c62828' : (type === 'warn' ? '#f57f17' : '#2e7d32');
     el.classList.add('show');
-    setTimeout(() => el.classList.remove('show'), 5000);
+    setTimeout(() => el.classList.remove('show'), 3000);
   }
 
   // ── 初始化 ────────────────────────────────────────────
-  document.getElementById('networkHint').classList.add('show');
   loadReports(false);
   setInterval(() => loadReports(false), REFRESH_MS);
 </script>
