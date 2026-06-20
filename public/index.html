@@ -513,8 +513,8 @@
 </div>
 
 <script>
-  // ── 配置（零密钥前端）─────────────────────────────────
-  const API_BASE       = '/.netlify/functions/api';
+  // ── 配置（零密钥前端，API 走腾讯云 CloudBase 云函数）─────
+  const API_BASE       = 'https://flood-alert-d5g06ojrg6007421f.service.tcloudbase.com/api';
   const IMGBB_API_KEY  = '46a07d7e83220e697386f6233c1da8f4';
   const ADMIN_PASSWORD = 'admin888';
   const EXPIRE_HOURS   = 12;
@@ -616,7 +616,7 @@
       document.getElementById('reportList').innerHTML = '<div class="loading">⏳ 正在刷新…</div>';
     }
     try {
-      const res = await fetch(API_BASE);
+      const res = await fetch(`${API_BASE}/issues`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const issues = await res.json();
 
@@ -739,7 +739,7 @@
     const issueTitle = `[积水上报] ${location} - ${SEV_MAP[severity].label}`;
 
     try {
-      const res = await fetch(API_BASE, {
+      const res = await fetch(`${API_BASE}/issues`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json;charset=UTF-8' },
         body: JSON.stringify({ title: issueTitle, body: issueBody }),
@@ -795,7 +795,7 @@
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}?action=delete&id=${pendingDeleteId}&pwd=${ADMIN_PASSWORD}`, {
+      const res = await fetch(`${API_BASE}/issues/${pendingDeleteId}?pwd=${ADMIN_PASSWORD}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json;charset=UTF-8' },
         body: JSON.stringify({ state: 'closed' }),

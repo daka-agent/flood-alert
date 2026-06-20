@@ -1,11 +1,11 @@
 /**
  * flood-alert-api — Gitee Issues 代理（Netlify Function）
- * 单函数处理所有 /api/* 请求，通过 path + method 路由
+ * 单函数处理所有请求，通过 HTTP method 区分操作
  *
  * 前端调用：
- *   GET   /api/issues       — 读取列表
- *   POST  /api/issues       — 创建上报
- *   PATCH /api/issues/:id   — 关闭（删除）上报
+ *   GET   /.netlify/functions/api                          — 读取列表
+ *   POST  /.netlify/functions/api                          — 创建上报
+ *   PATCH /.netlify/functions/api?action=delete&id=123&pwd=xxx — 删除上报
  */
 
 const GITEE_OWNER = 'duobaozhang';
@@ -51,7 +51,6 @@ async function nodeFetch(url, options = {}) {
 
 exports.handler = async (event, context) => {
   const httpMethod = event.httpMethod;
-  const path = event.path || '';
   const qs = event.queryStringParameters || {};
   let body = null;
   try { body = event.body ? JSON.parse(event.body) : null; } catch(e) {}
@@ -68,19 +67,16 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // 提取路径中的关键部分：/issues 或 /issues/:id
-    const issueMatch = path.match(/\/issues(?:\/(\d+))?/);
-
-    // GET /api/issues — 读取 Issues 列表
-    if (issueMatch && !issueMatch[1] && httpMethod === 'GET') {
+    // GET — 读取 Issues 列表
+    if (httpMethod === 'GET') {
       const apiUrl = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues?state=open&per_page=100&access_token=${GITEE_TOKEN}`;
       const res = await nodeFetch(apiUrl);
       const data = await res.json();
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(data) };
     }
 
-    // POST /api/issues — 创建 Issue（提交上报）
-    if (issueMatch && !issueMatch[1] && httpMethod === 'POST') {
+    // POST — 创建 Issue（提交上报）
+    if (httpMethod === 'POST') {
       const apiUrl = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues?access_token=${GITEE_TOKEN}`;
       const res = await nodeFetch(apiUrl, {
         method: 'POST',
@@ -91,13 +87,16 @@ exports.handler = async (event, context) => {
       return { statusCode: res.status || 200, headers: corsHeaders, body: JSON.stringify(data) };
     }
 
-    // PATCH /api/issues/:id — 关闭 Issue（删除上报）
-    if (issueMatch && issueMatch[1] && httpMethod === 'PATCH') {
+    // PATCH — 关闭 Issue（删除上报），通过查询参数传 id 和 pwd
+    if (httpMethod === 'PATCH') {
+      const issueId = qs.id;
       const pwd = qs.pwd || '';
       if (pwd !== 'admin888') {
         return { statusCode: 403, headers: corsHeaders, body: JSON.stringify({ error: '密码错误' }) };
       }
-      const issueId = issueMatch[1];
+      if (!issueId) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: '缺少 id 参数' }) };
+      }
       const apiUrl = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues/${issueId}?access_token=${GITEE_TOKEN}`;
       const res = await nodeFetch(apiUrl, {
         method: 'PATCH',
@@ -108,7 +107,7 @@ exports.handler = async (event, context) => {
       return { statusCode: res.status || 200, headers: corsHeaders, body: JSON.stringify(data) };
     }
 
-    return { statusCode: 404, headers: corsHeaders, body: JSON.stringify({ error: 'Not Found', path: path, method: httpMethod }) };
+    return { statusCode: 404, headers: corsHeaders, body: JSON.stringify({ error: 'Not Found', method: httpMethod }) };
   } catch (err) {
     return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message }) };
   }
