@@ -1,10 +1,14 @@
 [build]
   publish = "."
+  command = ""
 
 [functions]
   directory = "netlify/functions"
 
-# 将 /api 路径重写到 Netlify Functions
+[build.environment]
+  NODE_VERSION = "18"
+
+# 将 /api/* 路径重写到 Netlify Functions
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
