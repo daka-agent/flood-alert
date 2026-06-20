@@ -1,5 +1,5 @@
 /**
- * flood-alert-api — Gitee Issues 代理（Netlify Function）
+ * flood-alert-api — GitHub Issues 代理（Netlify Function）
  * 单函数处理所有请求，通过 HTTP method 区分操作
  *
  * 前端调用：
@@ -8,23 +8,18 @@
  *   PATCH /.netlify/functions/api?action=delete&id=123&pwd=xxx — 删除上报
  */
 
-const GITEE_OWNER = 'duobaozhang';
-const GITEE_REPO  = 'flood-alert';
-const GITEE_TOKEN = '927b7f230b6f9e68c74ad28c0e55f7b5';
-const GITEE_API   = 'https://gitee.com/api/v5';
+const GH_OWNER = 'daka-agent';
+const GH_REPO  = 'flood-alert';
+const GH_TOKEN  = process.env.GH_TOKEN;
+const GH_API    = 'https://api.github.com';
 
-// Node 18+ 内置 fetch；低版本降级用 https 模块
+// Node 18+ 内置 fetch
 let _fetch;
-try {
-  _fetch = fetch;
-} catch (e) {
-  _fetch = null;
-}
+try { _fetch = fetch; } catch(e) { _fetch = null; }
 
-async function nodeFetch(url, options = {}) {
+async function safeFetch(url, options = {}) {
   if (_fetch) return _fetch(url, options);
-
-  // 降级：用 Node.js 内置 https 模块
+  // 降级：Node https 模块
   const https = require('https');
   const { URL } = require('url');
   return new Promise((resolve, reject) => {
@@ -39,6 +34,7 @@ async function nodeFetch(url, options = {}) {
       res.on('data', (chunk) => data += chunk);
       res.on('end', () => resolve({
         status: res.statusCode,
+        statusText: res.statusMessage,
         json: () => Promise.resolve(JSON.parse(data)),
         text: () => Promise.resolve(data),
       }));
@@ -47,6 +43,16 @@ async function nodeFetch(url, options = {}) {
     if (options.body) req.write(options.body);
     req.end();
   });
+}
+
+// GitHub API 通用请求头
+function ghHeaders(extra = {}) {
+  return {
+    'Authorization': `token ${GH_TOKEN}`,
+    'Accept': 'application/vnd.github.v3+json',
+    'User-Agent': 'flood-alert-app',
+    ...extra,
+  };
 }
 
 exports.handler = async (event, context) => {
@@ -59,7 +65,7 @@ exports.handler = async (event, context) => {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json; charset=utf-8'
+    'Content-Type': 'application/json; charset=utf-8',
   };
 
   if (httpMethod === 'OPTIONS') {
@@ -67,27 +73,29 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // GET — 读取 Issues 列表
+    // GET — 读取 Issues 列表（open 状态）
     if (httpMethod === 'GET') {
-      const apiUrl = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues?state=open&per_page=100&access_token=${GITEE_TOKEN}`;
-      const res = await nodeFetch(apiUrl);
+      const apiUrl = `${GH_API}/repos/${GH_OWNER}/${GH_REPO}/issues?state=open&per_page=100`;
+      const res = await safeFetch(apiUrl, { headers: ghHeaders() });
       const data = await res.json();
+      if (!res.ok) throw new Error(`GitHub API ${res.status}: ${JSON.stringify(data)}`);
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(data) };
     }
 
     // POST — 创建 Issue（提交上报）
     if (httpMethod === 'POST') {
-      const apiUrl = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues?access_token=${GITEE_TOKEN}`;
-      const res = await nodeFetch(apiUrl, {
+      const apiUrl = `${GH_API}/repos/${GH_OWNER}/${GH_REPO}/issues`;
+      const res = await safeFetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+        headers: ghHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ title: body.title, body: body.body }),
       });
       const data = await res.json();
-      return { statusCode: res.status || 200, headers: corsHeaders, body: JSON.stringify(data) };
+      if (!res.ok) throw new Error(`GitHub API ${res.status}: ${JSON.stringify(data)}`);
+      return { statusCode: res.status || 201, headers: corsHeaders, body: JSON.stringify(data) };
     }
 
-    // PATCH — 关闭 Issue（删除上报），通过查询参数传 id 和 pwd
+    // PATCH — 关闭 Issue（删除上报）
     if (httpMethod === 'PATCH') {
       const issueId = qs.id;
       const pwd = qs.pwd || '';
@@ -97,13 +105,14 @@ exports.handler = async (event, context) => {
       if (!issueId) {
         return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: '缺少 id 参数' }) };
       }
-      const apiUrl = `${GITEE_API}/repos/${GITEE_OWNER}/${GITEE_REPO}/issues/${issueId}?access_token=${GITEE_TOKEN}`;
-      const res = await nodeFetch(apiUrl, {
+      const apiUrl = `${GH_API}/repos/${GH_OWNER}/${GH_REPO}/issues/${issueId}`;
+      const res = await safeFetch(apiUrl, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+        headers: ghHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ state: 'closed' }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(`GitHub API ${res.status}: ${JSON.stringify(data)}`);
       return { statusCode: res.status || 200, headers: corsHeaders, body: JSON.stringify(data) };
     }
 
