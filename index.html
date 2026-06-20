@@ -627,7 +627,7 @@
           try {
             const body = JSON.parse(issue.body || '{}');
             return {
-              issueId: issue.id,
+              issueId: issue.number,
               iid: issue.iid || issue.number,
               ts: body.ts || new Date(issue.created_at).getTime(),
               location: body.location || issue.title.replace('[积水上报] ', ''),
