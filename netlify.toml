@@ -8,8 +8,8 @@
 [build.environment]
   NODE_VERSION = "18"
 
-# 将 /api/* 路径重写到 Netlify Functions
+# 将 /api/* 路径全部重写到单个函数 api（不带 :splat，原路径通过 event.path 获取）
 [[redirects]]
   from = "/api/*"
-  to = "/.netlify/functions/api/:splat"
+  to = "/.netlify/functions/api"
   status = 200
